@@ -1,0 +1,420 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <title>Taco Celebration</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #ffffff;
+
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      background-image: url("./background.jpg");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.2);
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+
+      width: 90%;
+      max-width: 1500px;
+
+      text-align: center;
+    }
+
+    .main-taco {
+      font-size: clamp(70px, 8vw, 140px);
+      line-height: 1;
+      margin-bottom: 30px;
+    }
+
+    .sender {
+      font-size: clamp(50px, 6vw, 100px);
+      font-weight: 700;
+      line-height: 1.1;
+
+      margin-bottom: 20px;
+
+      overflow-wrap: break-word;
+    }
+
+    .gave-to {
+      font-size: clamp(24px, 2.5vw, 42px);
+      opacity: 0.8;
+
+      margin-bottom: 20px;
+    }
+
+    .receivers {
+      font-size: clamp(40px, 5vw, 80px);
+      font-weight: 700;
+      line-height: 1.2;
+
+      margin-bottom: 45px;
+
+      overflow-wrap: break-word;
+    }
+
+    .text {
+      max-width: 1200px;
+      margin: 0 auto;
+
+      font-size: clamp(30px, 3.5vw, 58px);
+      line-height: 1.4;
+      font-weight: 400;
+
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+
+    .error {
+      display: none;
+
+      position: relative;
+      z-index: 1;
+
+      font-size: 32px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+
+<body>
+
+  <main
+    id="app"
+    class="container"
+  >
+
+    <div class="main-taco">
+      🌮
+    </div>
+
+    <div
+      id="sender"
+      class="sender"
+    >
+      Loading...
+    </div>
+
+    <div
+      id="gaveTo"
+      class="gave-to"
+    >
+      gave tacos to
+    </div>
+
+    <div
+      id="receivers"
+      class="receivers"
+    ></div>
+
+    <div
+      id="text"
+      class="text"
+    ></div>
+
+  </main>
+
+
+  <div
+    id="error"
+    class="error"
+  >
+    Unable to load Taco data
+  </div>
+
+
+  <script>
+
+    /*
+     * =========================================
+     * SUPABASE CONFIGURATION
+     * =========================================
+     */
+
+    const SUPABASE_URL =
+      "https://fjjpprbooqdrcdcbgrjn.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_k7ATPOqoO1xd0dFCAMdwcg_hsSx4wAd";
+
+    const supabaseClient =
+    supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY
+    );
+
+    /*
+     * =========================================
+     * LOAD LATEST TACO EVENT
+     * =========================================
+     */
+
+    async function loadLatestTaco() {
+
+      try {
+
+        const endpoint =
+          `${SUPABASE_URL}/rest/v1/taco_events` +
+          `?select=sender,receivers,text,created_at` +
+          `&order=created_at.desc` +
+          `&limit=1`;
+
+
+        const response = await fetch(
+          endpoint,
+          {
+            method: "GET",
+
+            headers: {
+              "apikey": SUPABASE_PUBLISHABLE_KEY,
+              "Authorization":
+                `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
+            },
+
+            cache: "no-store"
+          }
+        );
+
+
+        if (!response.ok) {
+
+          const errorText =
+            await response.text();
+
+          throw new Error(
+            `Supabase ${response.status}: ${errorText}`
+          );
+
+        }
+
+
+        const rows =
+          await response.json();
+
+
+        if (
+          !Array.isArray(rows) ||
+          rows.length === 0
+        ) {
+
+          throw new Error(
+            "No Taco event found"
+          );
+
+        }
+
+
+        const taco =
+          rows[0];
+
+
+        renderTaco(taco);
+
+      }
+
+      catch (error) {
+
+        console.error(
+          "Failed to load Taco event:",
+          error
+        );
+
+        showError();
+
+      }
+
+    }
+     
+    function subscribeToTacoEvents() {
+
+  supabaseClient
+    .channel("taco-events")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "taco_events"
+      },
+      (payload) => {
+
+        console.log(
+          "New Taco received:",
+          payload.new
+        );
+
+        renderTaco(payload.new);
+      }
+    )
+    .subscribe((status) => {
+
+      console.log(
+        "Realtime status:",
+        status
+      );
+
+    });
+}
+
+    /*
+     * =========================================
+     * RENDER TACO
+     * =========================================
+     */
+
+    function renderTaco(data) {
+
+      /*
+       * Sender
+       */
+
+      const sender =
+        typeof data.sender === "string"
+          ? data.sender
+          : "";
+
+
+      /*
+       * Receivers
+       */
+
+      const receivers =
+        Array.isArray(data.receivers)
+          ? data.receivers
+          : [];
+
+
+      /*
+       * Text
+       *
+       * Convert :taco: to 🌮
+       */
+
+      let text =
+        typeof data.text === "string"
+          ? data.text
+          : "";
+
+
+      text =
+        text.replace(
+          /:taco:/gi,
+          "🌮"
+        );
+
+
+      /*
+       * Update UI
+       */
+
+      document
+        .getElementById("sender")
+        .textContent =
+        sender;
+
+
+      document
+        .getElementById("receivers")
+        .textContent =
+        receivers.join("  •  ");
+
+
+      document
+        .getElementById("text")
+        .textContent =
+        text;
+
+
+      /*
+       * Show app
+       */
+
+      document
+        .getElementById("app")
+        .style.display =
+        "block";
+
+
+      document
+        .getElementById("error")
+        .style.display =
+        "none";
+
+    }
+
+
+    /*
+     * =========================================
+     * ERROR
+     * =========================================
+     */
+
+    function showError() {
+
+      document
+        .getElementById("app")
+        .style.display =
+        "none";
+
+
+      document
+        .getElementById("error")
+        .style.display =
+        "block";
+
+    }
+
+
+    /*
+     * =========================================
+     * START
+     * =========================================
+     */
+
+    loadLatestTaco();
+subscribeToTacoEvents();
+  </script>
+
+</body>
+
+</html>
+```
